@@ -17,7 +17,7 @@ import os
 import csv
 from scipy.stats import mode
 import doc2vec,util
-import copy
+import copy,random
 USER_NUM = 1479
 ATTRIBUTE = 16  ##14个属性加名字和
 Path = '/home/linlt/code/cluster'
@@ -189,59 +189,106 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 
 		print "query+comment match:",len(data_1)
 
-		match = [[] for i in xrange(len(querylist))]
-		for i in data_1:
-			match[i[0]].append(i[1])
-			match[i[1]].append(i[0])
-		# print match
 		
 
 		tmp = matrix.as_matrix()
+		print 'matrix sparsity:',util.count_sparsity(tmp)
+		count = fill_with_col_ap(tmp,querylist,data_1,sim)
 		
-		print 'matrix sparsity:',util.count_sparsity(tmp,v=1)
-		row,col = matrix.shape
-		i = 0
-		count = 0
-		tmp_copy = copy.copy(tmp)
-		while i < row:
-			diff = 1
-			iter = 0
-			while iter<100 and diff>0:
-				diff = 0
-				for node in xrange(len(querylist)):
-					if (len(match[node]) > 0) and (util.isNone(tmp_copy[i][node+1])) : #tmp
-						simset = match[node]
-						# for node in simset:
-						# 	if isNone(tmp[i][node+1]):
-								## is nan,need to fill
-						max_value = 0
-						pos = -1
-						for sim_node in simset:
-							if sim[node][sim_node] > max_value and not util.isNone(tmp[i][sim_node+1]):
-								pos = sim_node
-								max_value = sim[node][sim_node]
-						if pos == -1: ## all the similarity set is nan
-							#print 'all the similar query is null'
-							continue
-						else:
-							if tmp[i][node+1] != tmp[i][pos+1]:  ##最优解变了
-								diff += 1
-								if tmp[i][node+1]=='?':
-									count += 1
-								tmp[i][node+1] = tmp[i][pos+1]
-							
-					else: 	# no need to fill,already have value
-							#print 'no need to fill'
-						continue
-				# if iter%1==0:
-				# 	print"---> Iteration %d, changed: %f"%(iter,diff)
-				iter += 1
-			i += 1
-				
-
 		print 'changed',count
 		print 'matrix sparsity:',util.count_sparsity(tmp)
 		return matrix
+
+def generate_match(querylist,data_1):
+	tmp_match = { e:[e] for e in xrange(len(querylist))}
+	for e in data_1:
+		s,e = e[0],e[1]
+		tmp_match[s].append(e)
+		tmp_match[e].append(s)
+	match = [ tmp_match[key] for key in tmp_match if len(tmp_match[key]) > 1]
+	return match
+	
+
+def fill_with_col_ap(tmp,querylist,data_1,sim):
+	match = generate_match(querylist,data_1)
+	row,col = tmp.shape
+	count = 0
+	iter = 100
+	i = 0
+	changed = float('inf')
+	tmp_copy = copy.copy(tmp)
+	tmp_change = 0
+	while i < iter and changed != 0:
+		random.shuffle(match)
+		changed = 0
+		for pair in match:
+			node = pair[0]
+			simnode = pair[1:]
+			j = 0
+			while j < row:
+				if not util.isNone(tmp_copy[j][node]): 
+					j += 1
+					continue
+				answers = tmp[j][simnode]
+				ans = util.most_commom(answers)
+				if ans == None or tmp[j][node] == ans: 
+					j += 1
+					continue
+				tmp[j][node] = ans
+				changed += 1
+				j += 1
+		print 'iteration: %d / changed: %d'%(i,changed)
+		if i == 0: tmp_change = changed
+		i += 1
+	return tmp_change
+	
+
+def fill_with_ap(tmp,querylist,data_1,sim):
+	match = [[] for i in xrange(len(querylist))]
+	for i in data_1:
+		match[i[0]].append(i[1])
+		match[i[1]].append(i[0])
+	#print match
+	row,col = tmp.shape
+	i = 0
+	count = 0
+	tmp_copy = copy.copy(tmp)
+	while i < row:
+		diff = 1
+		iter = 0
+		while iter<100 and diff>0:
+			diff = 0
+			for node in xrange(len(querylist)):
+				if (len(match[node]) > 0) and (util.isNone(tmp_copy[i][node+1])) : #tmp
+					simset = match[node]
+					# for node in simset:
+						# 	if isNone(tmp[i][node+1]):
+								## is nan,need to fill
+					max_value = 0
+					pos = -1
+					for sim_node in simset:
+						if sim[node][sim_node] > max_value and not util.isNone(tmp[i][sim_node+1]):
+							pos = sim_node
+							max_value = sim[node][sim_node]
+					if pos == -1: ## all the similarity set is nan
+							#print 'all the similar query is null'
+						continue
+					else:
+						if tmp[i][node+1] != tmp[i][pos+1]:  ##最优解变了
+							diff += 1
+							if tmp[i][node+1]=='?':
+								count += 1
+							tmp[i][node+1] = tmp[i][pos+1]
+							
+				else: 	# no need to fill,already have value
+					#print 'no need to fill'
+					continue
+				# if iter%1==0:
+				# 	print"---> Iteration %d, changed: %f"%(iter,diff)
+			iter += 1
+		i += 1
+	return count		
+
 
 
 if __name__ == '__main__':

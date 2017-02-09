@@ -20,14 +20,13 @@ import doc2vec,util
 import copy,random
 USER_NUM = 1479
 ATTRIBUTE = 16  ##14个属性加名字和
-Path = '/home/linlt/code/cluster'
-# Path = 'E:\Anaconda-2.3.0\code\Encoding categorical features'
+Path = '/home/linlt/code/new_crawl/fill/'
 def group(label):
 	username = []
-	df = pd.read_csv(Path + '/fulldata.csv')
+	df = pd.read_csv(Path + '/fulldata_xmeans.csv')
 	#df = pd.read_csv( './fulldata.csv')
 	f=df.iloc[:,[0,15]]
-	df = pd.read_csv(Path + '/user_topic_origin.csv')
+	df = pd.read_csv(Path + '/topic_matric_origin.csv')
 	#df = pd.read_csv('./user_topic_origin.csv')
 	f_1 = df.iloc[:,0]
 	user = []
@@ -44,7 +43,7 @@ def group(label):
 def analy(cos,querylist,keywords,threshold = 0.6):
 	row,col= cos.shape
 	# print row,col
-	match = []
+	match = {}
 	data = []
 	i = 0
 	while i < row:
@@ -56,7 +55,7 @@ def analy(cos,querylist,keywords,threshold = 0.6):
 				key = set(keywords[i].split()) & set(keywords[j].split())  ##关键字取交集
 				# print key,cos[i][j]
 				interset = ' '.join(key)
-				match.append((i,j,interset))  ##相似度大的连接
+				match[str(i)+','+str(j)]=cos[i][j]
 				data.append([i,j])
 				# print querylist[i]
 				# print interset
@@ -71,25 +70,27 @@ def analy_doc2vec(cos,threshold = 0.85):
 	row,col= cos.shape
 	# print row,col
 	data = []
+	match = {}
 	i = 0
 	while i < row:
 		j = i + 1
 		while j < col:
 			if cos[i][j] > threshold:
 				data.append([i,j])
+				match[str(i)+','+str(j)]=cos[i][j]
 			j += 1
 		i += 1
 	# print 'match:',len(match)
-	return data
+	return match,data
 
 	
 
 def context1(querylist,username):
-	directory = Path + '/topic_comment'
+	directory = Path + '/comment5'
 	toadd = {}
 	for filename in os.listdir(directory):
 		filepath = directory + '/' + filename
-		lines = [l.strip() for l in open(filepath).readlines()]
+		lines = [l.strip().decode('utf-8','ignore') for l in open(filepath).readlines()]
 		for l in lines:
 			l = l.replace('\\','/')
 			dic = json.loads(l,strict= False)
@@ -128,7 +129,7 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 		else:
 			value.append([item])
 
-	df = pd.read_csv(Path + '/fulldata.csv')
+	df = pd.read_csv(Path + '/fulldata_xmeans.csv')
 	attribute = df.columns.values[:]  #第一行
 	attribute = list(attribute)
 	index = []
@@ -156,7 +157,7 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 		cluster = mode(cluster).mode[0]
 		print 'cluster:',cluster
 
-		df = pd.read_csv(Path + '/user_topic_origin.csv')
+		df = pd.read_csv(Path + '/topic_matric_origin.csv')
 		querylist = df.columns.values[1:-1]  #第一行
 		querylist = list(querylist)
 
@@ -176,13 +177,13 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 			edge,data_1 = analy(sim,querylist,corpus,threshold = threshold)
 
 		elif method == 'doc2vec':
-			filemodel = Path + '/doc2vec.model'
+			filemodel = '/home/linlt/code/cluster' + '/wiki_doc2vec.bin'
 			# doc2vec.train(content,filemodel)
 			#m = doc2vec.getMatrix('doc2vec.matrix',filemodel)
 			vectors = [list(doc2vec.getvector(q,filemodel)) for q in content]
 			m = np.asarray(vectors)
 			sim = cosine_similarity(m,m) #计算相似性
-			data_1 = analy_doc2vec(sim,threshold = threshold)
+			edge,data_1 = analy_doc2vec(sim,threshold = threshold)
 
 		print sim.shape
 
@@ -191,12 +192,13 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 
 		
 
-		tmp = matrix.as_matrix()
-		print 'matrix sparsity:',util.count_sparsity(tmp)
-		count = fill_with_col_ap(tmp,querylist,data_1,sim)
+		print 'matrix sparsity:',util.count_sparsity(matrix.as_matrix())
+		#count = fill_with_col_ap(matrix,querylist,edge,data_1,sim,value = 'binary')
+		count = fill_with_col_ap(matrix,querylist,edge,data_1,sim,value = 'float')
+		#count = fill_with_ap(matrix,querylist,edge,data_1,sim)
+		#matrix = fill_with_col_merge(matrix,querylist,edge,data_1,sim)
 		
-		print 'changed',count
-		print 'matrix sparsity:',util.count_sparsity(tmp)
+		print 'matrix sparsity:',util.count_sparsity(matrix.as_matrix())
 		return matrix
 
 def generate_match(querylist,data_1):
@@ -207,9 +209,54 @@ def generate_match(querylist,data_1):
 		tmp_match[e].append(s)
 	match = [ tmp_match[key] for key in tmp_match if len(tmp_match[key]) > 1]
 	return match
-	
 
-def fill_with_col_ap(tmp,querylist,data_1,sim):
+
+def fill_with_col_merge(m,querylist,edge,data_1,sim):
+	'''
+	fill the matrix with merging the query
+	with convergence
+	'''
+	tmp = m.as_matrix()
+	cols = list(m.columns.values)
+	match = generate_match(querylist,data_1)
+	flags =  [True] * len(cols)
+	row,col = tmp.shape
+	for pair in match[::-1]:
+		pair = [ p+1 for p in pair]
+		node = pair[0]
+		simnodes = pair[1:]
+		if len(simnodes) == 0 : continue
+		j = 0
+		while j < row:
+			if not util.isNone(tmp[j][node]):
+				j += 1
+				continue
+			answers = tmp[j][simnodes]
+			ans = util.most_commom(answers)
+			if ans == None:
+				j += 1
+				continue
+			tmp[j][node] = ans
+			j += 1
+		for simnode in simnodes:
+			flags[simnode] = False
+	qindexs = [ key for key,value in enumerate(flags) if value == True]
+	questions = [cols[key] for key in qindexs]
+	removed = [q for q in cols if q not in questions]
+	tmp_copy = copy.copy(tmp)[:,qindexs]
+	df = pd.DataFrame(data=tmp_copy,columns=questions)
+	return df
+
+
+def fill_with_col_ap(m,querylist,edge,data_1,sim,value='binary'):
+	'''
+	fill the matrix with ap,convergence
+	iterate with col
+	faster.
+	value options: 'binary'--> yes/no
+		       'float' --> numerical value
+	'''
+	tmp = m.as_matrix()
 	match = generate_match(querylist,data_1)
 	row,col = tmp.shape
 	count = 0
@@ -218,19 +265,27 @@ def fill_with_col_ap(tmp,querylist,data_1,sim):
 	changed = float('inf')
 	tmp_copy = copy.copy(tmp)
 	tmp_change = 0
+	vd = util.ValueDict(edge)
 	while i < iter and changed != 0:
 		random.shuffle(match)
 		changed = 0
 		for pair in match:
 			node = pair[0]
-			simnode = pair[1:]
+			simnodes = pair[1:]
 			j = 0
 			while j < row:
 				if not util.isNone(tmp_copy[j][node]): 
 					j += 1
 					continue
-				answers = tmp[j][simnode]
-				ans = util.most_commom(answers)
+				answers = tmp[j][simnodes]
+				ans = None
+				if value == 'binary':
+					ans = util.most_commom(answers)
+				elif value == 'float':
+					ans = vd.getFloat(node,simnodes,answers)
+				else:
+					print 'wrong value'
+					sys.exit()
 				if ans == None or tmp[j][node] == ans: 
 					j += 1
 					continue
@@ -243,7 +298,13 @@ def fill_with_col_ap(tmp,querylist,data_1,sim):
 	return tmp_change
 	
 
-def fill_with_ap(tmp,querylist,data_1,sim):
+def fill_with_ap(m,querylist,edge,data_1,sim):
+	'''
+	fill matrix with ap and convergence
+	Not iterate by col
+	Not recommend
+	'''
+	tmp = m.as_matrix()
 	match = [[] for i in xrange(len(querylist))]
 	for i in data_1:
 		match[i[0]].append(i[1])
@@ -293,9 +354,9 @@ def fill_with_ap(tmp,querylist,data_1,sim):
 
 if __name__ == '__main__':
 	rule = {'Gender':['Male'],'Age':20,'Party':['Republican Party','Democratic Party']}
-	df = pd.read_csv('./user_topic_origin.csv')
-	method = 'rake'
-	#method = 'doc2vec'
+	df = pd.read_csv(Path+'/topic_matric_origin.csv')
+	#method = 'rake'
+	method = 'doc2vec'
 	new_df = fill(rule,df,method)
 	new_df.to_csv('./test.csv',index=False)
 

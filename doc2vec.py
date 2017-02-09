@@ -45,5 +45,16 @@ def getvector(string,modelfile):
 		model = Doc2Vec.load(modelfile)
 	return model.infer_vector(word_tokenize(string))
 
+def checkModel(modelfile):
+	global model
+	if model == None:
+		model = Doc2Vec.load(modelfile)
+	print model.most_similar(u'government')
 
+
+
+if __name__ == '__main__':
+
+	#checkModel('/home/yangying/data/enwiki_dbow/doc2vec.bin')
+	print getvector(u'Fukushima children that diagnosed with thyroid cancer but radiation is said to be an ¡®unlikely?','/home/yangying/data/enwiki_dbow/doc2vec.bin')
 

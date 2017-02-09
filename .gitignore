@@ -93,4 +93,6 @@ topic_comment/
 SmartStoplist.txt
 doc2vec.matrix
 doc2vec.model
-
+*.swp
+*.bin
+*.npy

@@ -18,13 +18,20 @@ import csv
 from scipy.stats import mode
 import doc2vec,util
 import copy,random
-USER_NUM = 1479
-ATTRIBUTE = 16  ##14个属性加名字和
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+USER_NUM = 16739
+
 Path = '/home/linlt/code/new_crawl/fill/'
+
 def group(label):
 	username = []
 	df = pd.read_csv(Path + '/fulldata_xmeans.csv')
 	#df = pd.read_csv( './fulldata.csv')
+	row,col = df.as_matrix().shape
+	USER_NUM = row
 	f=df.iloc[:,[0,15]]
 	df = pd.read_csv(Path + '/topic_matric_origin.csv')
 	#df = pd.read_csv('./user_topic_origin.csv')
@@ -86,7 +93,7 @@ def analy_doc2vec(cos,threshold = 0.85):
 	
 
 def context1(querylist,username):
-	directory = Path + '/comment5'
+	directory = Path + '/comments/'
 	toadd = {}
 	for filename in os.listdir(directory):
 		filepath = directory + '/' + filename
@@ -159,17 +166,18 @@ def fill(rule,matrix,method = 'rake',threshold = 0.6):
 
 		df = pd.read_csv(Path + '/topic_matric_origin.csv')
 		querylist = df.columns.values[1:-1]  #第一行
-		querylist = list(querylist)
-
+		querylist = [q.strip().decode('utf-8','ignore')  for q in list(querylist)]
+		
 
 		username = group(cluster)  ##同为0组的用户
-		content = context1(querylist,username)
+		content = [ c.strip().decode('utf-8','ignore') for c in context1(querylist,username)]
 		corpus = []
 		if method == 'rake':
 			Rake = RAKE.Rake('./SmartStoplist.txt')
 			for i,q in enumerate(content):
 				keyword = Rake.run(q) ##返回关键字
 				corpus.append(' '.join([t[0].replace('-',' ') for t in keyword])) #关键字合并
+			print corpus
 			countvect = CountVectorizer()
 			m = countvect.fit_transform(corpus)
 			m = m.toarray()
@@ -353,10 +361,11 @@ def fill_with_ap(m,querylist,edge,data_1,sim):
 
 
 if __name__ == '__main__':
-	rule = {'Gender':['Male'],'Age':20,'Party':['Republican Party','Democratic Party']}
+	#rule = {'Gender':['Male'],'Age':20,'Party':['Democratic Party'],'Occupation':['Student']}
+	rule = {'Ethnicity':['White']}
 	df = pd.read_csv(Path+'/topic_matric_origin.csv')
-	#method = 'rake'
-	method = 'doc2vec'
+	method = 'rake'
+	#method = 'doc2vec'
 	new_df = fill(rule,df,method)
 	new_df.to_csv('./test.csv',index=False)
 
